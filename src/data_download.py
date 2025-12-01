@@ -46,7 +46,7 @@ class PubChemDownloader:
     def get_compound_properties(self, cid: int) -> Optional[Dict[str, Any]]:
         """Get compound properties from PubChem."""
         properties = [
-            'CanonicalSMILES',
+            'IsomericSMILES',
             'InChI',
             'MolecularWeight',
             'XLogP',
@@ -63,8 +63,6 @@ class PubChemDownloader:
         if data and 'PropertyTable' in data:
             props = data['PropertyTable']['Properties'][0]
             logger.info(f"Retrieved properties for CID {cid}")
-            logger.debug(f"  Keys in response: {list(props.keys())}")
-            logger.debug(f"  CanonicalSMILES value: {props.get('CanonicalSMILES', 'KEY_NOT_FOUND')}")
             return props
 
         logger.warning(f"Could not retrieve properties for CID {cid}")
@@ -112,7 +110,11 @@ class PubChemDownloader:
                 })
                 continue
 
-            smiles = properties.get('CanonicalSMILES')
+            # PubChem may return IsomericSMILES, CanonicalSMILES, or ConnectivitySMILES
+            smiles = (properties.get('IsomericSMILES') or
+                     properties.get('CanonicalSMILES') or
+                     properties.get('ConnectivitySMILES'))
+
             if smiles:
                 success_count += 1
                 logger.info(f"  ✓ Successfully retrieved SMILES for {name}")

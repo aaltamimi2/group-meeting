@@ -6,7 +6,7 @@ import json
 cid = 2244  # Aspirin CID
 
 properties = [
-    'CanonicalSMILES',
+    'IsomericSMILES',
     'InChI',
     'MolecularWeight',
     'XLogP',
@@ -40,8 +40,12 @@ if response.status_code == 200:
 
         print("\n" + "="*60)
         print("Checking for SMILES:")
+        print(f"  IsomericSMILES exists: {'IsomericSMILES' in props}")
+        print(f"  IsomericSMILES value: {props.get('IsomericSMILES', 'NOT FOUND')}")
         print(f"  CanonicalSMILES exists: {'CanonicalSMILES' in props}")
-        print(f"  Value: {props.get('CanonicalSMILES', 'NOT FOUND')}")
+        print(f"  CanonicalSMILES value: {props.get('CanonicalSMILES', 'NOT FOUND')}")
+        print(f"  ConnectivitySMILES exists: {'ConnectivitySMILES' in props}")
+        print(f"  ConnectivitySMILES value: {props.get('ConnectivitySMILES', 'NOT FOUND')}")
     else:
         print("\n⚠️  WARNING: 'PropertyTable' not found in response!")
 else:
