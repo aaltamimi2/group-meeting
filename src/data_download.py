@@ -71,12 +71,16 @@ class PubChemDownloader:
     def download_molecules(self, molecule_names: List[str]) -> pd.DataFrame:
         """Download molecular data for a list of molecules."""
         results = []
+        success_count = 0
+        failed_cid_count = 0
+        failed_properties_count = 0
 
         for name in molecule_names:
             logger.info(f"Processing {name}...")
 
             cid = self.get_compound_cid(name)
             if cid is None:
+                failed_cid_count += 1
                 results.append({
                     'name': name,
                     'cid': None,
@@ -92,6 +96,7 @@ class PubChemDownloader:
 
             properties = self.get_compound_properties(cid)
             if properties is None:
+                failed_properties_count += 1
                 results.append({
                     'name': name,
                     'cid': cid,
@@ -105,10 +110,17 @@ class PubChemDownloader:
                 })
                 continue
 
+            smiles = properties.get('CanonicalSMILES')
+            if smiles:
+                success_count += 1
+                logger.info(f"  ✓ Successfully retrieved SMILES for {name}")
+            else:
+                logger.warning(f"  ✗ No SMILES found for {name}")
+
             results.append({
                 'name': name,
                 'cid': cid,
-                'smiles': properties.get('CanonicalSMILES'),
+                'smiles': smiles,
                 'inchi': properties.get('InChI'),
                 'molecular_weight': properties.get('MolecularWeight'),
                 'xlogp': properties.get('XLogP'),
@@ -120,7 +132,14 @@ class PubChemDownloader:
             time.sleep(self.request_delay)
 
         df = pd.DataFrame(results)
-        logger.info(f"Downloaded data for {len(df)} molecules")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Download Summary:")
+        logger.info(f"  Total molecules requested: {len(molecule_names)}")
+        logger.info(f"  Successfully retrieved SMILES: {success_count}")
+        logger.info(f"  Failed to find CID: {failed_cid_count}")
+        logger.info(f"  Failed to get properties: {failed_properties_count}")
+        logger.info(f"  Molecules with missing SMILES: {len(df) - success_count}")
+        logger.info(f"{'='*60}")
         return df
 
 def main():

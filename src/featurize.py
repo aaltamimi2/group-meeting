@@ -41,11 +41,27 @@ class MolecularFeaturizer:
         """Featurize entire dataset."""
         logger.info("Starting featurization...")
 
+        initial_count = len(df)
+        logger.info(f"Initial dataset size: {initial_count} molecules")
+
         # Filter valid SMILES
         df = df[df['smiles'].notna()].copy()
-        df['valid_smiles'] = df['smiles'].apply(validate_smiles)
-        df = df[df['valid_smiles']].copy()
+        logger.info(f"Molecules with non-null SMILES: {len(df)}")
 
+        df['valid_smiles'] = df['smiles'].apply(validate_smiles)
+        valid_count = df['valid_smiles'].sum()
+        logger.info(f"Molecules with valid SMILES: {valid_count}")
+
+        if valid_count == 0:
+            logger.error("No valid SMILES found! Check your input data.")
+            logger.error("Common issues:")
+            logger.error("  1. PubChem download failed to retrieve SMILES")
+            logger.error("  2. Molecule names not found in PubChem")
+            logger.error("  3. SMILES strings are malformed")
+            logger.error("\nPlease run 'python diagnose.py' to debug the data.")
+            raise ValueError("No valid SMILES found in dataset")
+
+        df = df[df['valid_smiles']].copy()
         logger.info(f"Processing {len(df)} molecules with valid SMILES")
 
         # Initialize feature lists
@@ -90,6 +106,7 @@ class MolecularFeaturizer:
             result_df = pd.concat([df_reset, morgan_df_reset, descriptors_df_reset], axis=1)
 
         logger.info(f"Featurization complete. Shape: {result_df.shape}")
+        logger.info(f"Feature columns created: {len([c for c in result_df.columns if c.startswith('morgan_') or c.startswith('maccs_') or c in ['MW', 'LogP', 'TPSA']])} features")
         return result_df
 
 def main():
