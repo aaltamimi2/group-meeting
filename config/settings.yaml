@@ -1,0 +1,46 @@
+pubchem:
+  base_url: "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+  request_delay: 0.5
+  max_retries: 3
+
+featurization:
+  morgan_fingerprint:
+    radius: 2
+    n_bits: 2048
+  use_maccs: true
+  physicochemical_descriptors:
+    - MW
+    - LogP
+    - TPSA
+    - NumHDonors
+    - NumHAcceptors
+    - NumRotatableBonds
+    - NumAromaticRings
+    - NumAliphaticRings
+
+model:
+  test_size: 0.2
+  random_state: 42
+  cv_folds: 5
+
+  ridge:
+    alpha: 1.0
+
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    random_state: 42
+
+evaluation:
+  molecules:
+    - aspirin
+    - caffeine
+    - ibuprofen
+    - paracetamol
+    - morphine
+
+output:
+  raw_data: "data/raw/molecules.csv"
+  processed_data: "data/processed/processed.csv"
+  model_dir: "models"
+  reports_dir: "reports"
