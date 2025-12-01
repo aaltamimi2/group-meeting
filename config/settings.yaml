@@ -32,12 +32,108 @@ model:
     random_state: 42
 
 evaluation:
+  # 100 test molecules (different from main training set)
   molecules:
     - aspirin
-    - caffeine
+    - acetaminophen
     - ibuprofen
-    - paracetamol
+    - naproxen
+    - diclofenac
+    - celecoxib
+    - meloxicam
+    - ketoprofen
+    - ketorolac
+    - piroxicam
+    - caffeine
+    - theophylline
+    - theobromine
     - morphine
+    - codeine
+    - hydrocodone
+    - oxycodone
+    - tramadol
+    - fentanyl
+    - methadone
+    - atorvastatin
+    - simvastatin
+    - pravastatin
+    - rosuvastatin
+    - lovastatin
+    - metformin
+    - glipizide
+    - glyburide
+    - pioglitazone
+    - sitagliptin
+    - lisinopril
+    - enalapril
+    - ramipril
+    - captopril
+    - losartan
+    - amlodipine
+    - nifedipine
+    - diltiazem
+    - verapamil
+    - nicardipine
+    - metoprolol
+    - atenolol
+    - propranolol
+    - carvedilol
+    - bisoprolol
+    - furosemide
+    - hydrochlorothiazide
+    - chlorthalidone
+    - spironolactone
+    - torsemide
+    - warfarin
+    - rivaroxaban
+    - apixaban
+    - dabigatran
+    - clopidogrel
+    - omeprazole
+    - lansoprazole
+    - pantoprazole
+    - esomeprazole
+    - rabeprazole
+    - sertraline
+    - fluoxetine
+    - paroxetine
+    - citalopram
+    - escitalopram
+    - lorazepam
+    - diazepam
+    - alprazolam
+    - clonazepam
+    - temazepam
+    - phenytoin
+    - carbamazepine
+    - valproic acid
+    - lamotrigine
+    - levetiracetam
+    - albuterol
+    - salmeterol
+    - montelukast
+    - cetirizine
+    - loratadine
+    - fexofenadine
+    - diphenhydramine
+    - amoxicillin
+    - azithromycin
+    - ciprofloxacin
+    - levofloxacin
+    - doxycycline
+    - acyclovir
+    - oseltamivir
+    - dopamine
+    - serotonin
+    - norepinephrine
+    - epinephrine
+    - histamine
+    - glucose
+    - fructose
+    - sucrose
+    - ascorbic acid
+    - retinol
+    - cholesterol
 
 output:
   raw_data: "data/raw/molecules.csv"
