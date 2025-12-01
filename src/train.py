@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.linear_model import Ridge, Lasso, ElasticNet, SGDRegressor
+from sklearn.linear_model import Ridge, Lasso, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
@@ -492,7 +492,6 @@ def main():
         (Ridge(alpha=1.0, random_state=trainer.random_state), 'Ridge'),
         (Lasso(alpha=0.1, random_state=trainer.random_state, max_iter=5000), 'Lasso'),
         (ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=trainer.random_state, max_iter=5000), 'ElasticNet'),
-        (SGDRegressor(random_state=trainer.random_state, max_iter=5000), 'SGD'),
         (DecisionTreeRegressor(max_depth=10, random_state=trainer.random_state), 'Decision Tree'),
         (KNeighborsRegressor(n_neighbors=5, n_jobs=-1), 'KNN'),
         (RandomForestRegressor(n_estimators=100, max_depth=10, random_state=trainer.random_state, n_jobs=-1), 'Random Forest'),

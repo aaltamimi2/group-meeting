@@ -36,7 +36,6 @@ class ModelEvaluator:
             'Ridge': 'ridge_model.pkl',
             'Lasso': 'lasso_model.pkl',
             'ElasticNet': 'elasticnet_model.pkl',
-            'SGD': 'sgd_model.pkl',
             'Decision Tree': 'decision_tree_model.pkl',
             'KNN': 'knn_model.pkl',
             'Random Forest': 'random_forest_model.pkl'
