@@ -40,6 +40,8 @@ if response.status_code == 200:
 
         print("\n" + "="*60)
         print("Checking for SMILES:")
+        print(f"  SMILES exists: {'SMILES' in props}")
+        print(f"  SMILES value: {props.get('SMILES', 'NOT FOUND')}")
         print(f"  IsomericSMILES exists: {'IsomericSMILES' in props}")
         print(f"  IsomericSMILES value: {props.get('IsomericSMILES', 'NOT FOUND')}")
         print(f"  CanonicalSMILES exists: {'CanonicalSMILES' in props}")

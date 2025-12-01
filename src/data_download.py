@@ -110,8 +110,10 @@ class PubChemDownloader:
                 })
                 continue
 
-            # PubChem may return IsomericSMILES, CanonicalSMILES, or ConnectivitySMILES
-            smiles = (properties.get('IsomericSMILES') or
+            # PubChem returns SMILES under the key 'SMILES' regardless of which type we request
+            # Also check alternative keys for compatibility
+            smiles = (properties.get('SMILES') or
+                     properties.get('IsomericSMILES') or
                      properties.get('CanonicalSMILES') or
                      properties.get('ConnectivitySMILES'))
 
