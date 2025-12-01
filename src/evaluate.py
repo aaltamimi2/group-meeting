@@ -15,7 +15,7 @@ logger = setup_logging(__name__)
 sns.set_style('whitegrid')
 
 class ModelEvaluator:
-    """Evaluate trained models on new molecules."""
+    """Evaluate trained models on new molecules for lipophilicity prediction."""
 
     def __init__(self, config: dict):
         self.config = config
@@ -51,20 +51,9 @@ class ModelEvaluator:
 
         return models
 
-    def compute_ground_truth(self, df: pd.DataFrame) -> np.ndarray:
-        """Compute ground truth target using same formula as training."""
-        target = (
-            0.3 * df['MW'].fillna(0) / 500 +
-            0.2 * df['LogP'].fillna(0) +
-            0.25 * df['TPSA'].fillna(0) / 100 +
-            0.15 * df['NumHDonors'].fillna(0) +
-            0.1 * df['NumHAcceptors'].fillna(0)
-        )
-        return target.values
-
     def predict_molecules(self, molecule_names: List[str]) -> pd.DataFrame:
-        """Run full pipeline: download -> featurize -> predict."""
-        logger.info(f"Processing {len(molecule_names)} molecules for evaluation...")
+        """Run full pipeline: download -> featurize -> predict lipophilicity."""
+        logger.info(f"Processing {len(molecule_names)} molecules for lipophilicity prediction...")
 
         # Download data
         df = self.downloader.download_molecules(molecule_names)
@@ -82,12 +71,8 @@ class ModelEvaluator:
 
         X = df_features[feature_cols].fillna(0)
 
-        # Compute ground truth
-        y_true = self.compute_ground_truth(df_features)
-
         # Make predictions with all models
         results = df_features[['name', 'cid', 'smiles', 'molecular_weight']].copy()
-        results['true_value'] = y_true
 
         for model_name, model in self.models.items():
             try:
@@ -98,15 +83,20 @@ class ModelEvaluator:
                 logger.error(f"  ✗ {model_name} failed: {e}")
                 results[f'{model_name}_pred'] = np.nan
 
+        # Add consensus prediction (mean of all models)
+        pred_cols = [col for col in results.columns if col.endswith('_pred')]
+        results['consensus_pred'] = results[pred_cols].mean(axis=1)
+        results['prediction_std'] = results[pred_cols].std(axis=1)
+
         logger.info("All predictions complete")
         return results
 
     def create_evaluation_visualizations(self, results: pd.DataFrame):
-        """Create comprehensive evaluation visualizations."""
-        logger.info("Creating evaluation visualizations...")
+        """Create comprehensive visualizations for lipophilicity predictions."""
+        logger.info("Creating lipophilicity prediction visualizations...")
 
         # Get prediction columns
-        pred_cols = [col for col in results.columns if col.endswith('_pred')]
+        pred_cols = [col for col in results.columns if col.endswith('_pred') and col != 'consensus_pred']
         model_names = [col.replace('_pred', '') for col in pred_cols]
 
         # Remove failed models (all NaN)
@@ -119,190 +109,67 @@ class ModelEvaluator:
 
         logger.info(f"Creating visualizations for {len(valid_models)} models")
 
-        # 1. Prediction vs Ground Truth (all models)
-        self._plot_predictions_vs_truth(results, valid_models)
+        # 1. Prediction distributions by model
+        self._plot_prediction_distributions(results, valid_models)
 
-        # 2. Prediction Error Distribution
-        self._plot_error_distribution(results, valid_models)
-
-        # 3. Model Performance Comparison
-        self._plot_model_performance_comparison(results, valid_models)
-
-        # 4. Prediction Correlation Heatmap
+        # 2. Prediction correlation heatmap (model agreement)
         self._plot_prediction_correlations(results, valid_models)
 
-        # 5. Individual Model Scatter Plots (best 4 models)
-        self._plot_top_model_scatter(results, valid_models)
+        # 3. Consensus predictions with uncertainty
+        self._plot_consensus_predictions(results)
+
+        # 4. Top/bottom molecules by predicted lipophilicity
+        self._plot_top_molecules(results)
 
         logger.info("Evaluation visualizations complete")
 
-    def _plot_predictions_vs_truth(self, results: pd.DataFrame, model_names: List[str]):
-        """Plot predicted vs ground truth for all models."""
-        n_models = len(model_names)
-        n_cols = 3
-        n_rows = (n_models + n_cols - 1) // n_cols
+    def _plot_prediction_distributions(self, results: pd.DataFrame, model_names: List[str]):
+        """Plot distribution of predictions for each model."""
+        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        axes = axes.flatten()
 
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5 * n_rows))
-        axes = axes.flatten() if n_models > 1 else [axes]
+        for idx, model_name in enumerate(model_names[:6]):
+            predictions = results[f'{model_name}_pred'].dropna()
 
-        y_true = results['true_value']
-
-        for idx, model_name in enumerate(model_names):
-            y_pred = results[f'{model_name}_pred']
-            valid_mask = ~(y_pred.isna() | y_true.isna())
-
-            if valid_mask.sum() == 0:
-                continue
-
-            y_true_valid = y_true[valid_mask]
-            y_pred_valid = y_pred[valid_mask]
-
-            # Scatter plot
-            axes[idx].scatter(y_true_valid, y_pred_valid, alpha=0.5, s=30, edgecolors='black', linewidth=0.5)
-
-            # Perfect prediction line
-            min_val = min(y_true_valid.min(), y_pred_valid.min())
-            max_val = max(y_true_valid.max(), y_pred_valid.max())
-            axes[idx].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect Prediction')
-
-            # Calculate R²
-            from sklearn.metrics import r2_score, mean_squared_error
-            r2 = r2_score(y_true_valid, y_pred_valid)
-            mse = mean_squared_error(y_true_valid, y_pred_valid)
-
-            axes[idx].set_xlabel('Ground Truth', fontsize=10)
-            axes[idx].set_ylabel('Predicted', fontsize=10)
-            axes[idx].set_title(f'{model_name}\nR² = {r2:.3f}, MSE = {mse:.4f}', fontsize=11)
-            axes[idx].legend()
+            # Histogram
+            axes[idx].hist(predictions, bins=25, edgecolor='black', alpha=0.7, color='steelblue')
+            axes[idx].set_xlabel('Predicted LogD', fontsize=11)
+            axes[idx].set_ylabel('Count', fontsize=11)
+            axes[idx].set_title(f'{model_name}\nMean: {predictions.mean():.2f}, Std: {predictions.std():.2f}',
+                              fontsize=12, fontweight='bold')
             axes[idx].grid(True, alpha=0.3)
+            axes[idx].axvline(predictions.mean(), color='red', linestyle='--', linewidth=2, label='Mean')
+            axes[idx].legend()
 
         # Hide unused subplots
         for idx in range(len(model_names), len(axes)):
             axes[idx].axis('off')
 
         plt.tight_layout()
-        plot_path = os.path.join(self.reports_dir, 'evaluation_pred_vs_truth.png')
+        plot_path = os.path.join(self.reports_dir, 'evaluation_prediction_distributions.png')
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
-        logger.info(f"Saved prediction vs truth plot to {plot_path}")
-
-    def _plot_error_distribution(self, results: pd.DataFrame, model_names: List[str]):
-        """Plot error distribution for each model."""
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-        y_true = results['true_value']
-        errors = {}
-
-        for model_name in model_names:
-            y_pred = results[f'{model_name}_pred']
-            valid_mask = ~(y_pred.isna() | y_true.isna())
-            if valid_mask.sum() > 0:
-                errors[model_name] = (y_pred[valid_mask] - y_true[valid_mask]).values
-
-        # Box plot
-        if errors:
-            axes[0].boxplot(errors.values(), labels=errors.keys(), vert=True)
-            axes[0].set_ylabel('Prediction Error', fontsize=11)
-            axes[0].set_title('Prediction Error Distribution by Model', fontsize=12, fontweight='bold')
-            axes[0].tick_params(axis='x', rotation=45)
-            axes[0].grid(True, alpha=0.3, axis='y')
-            axes[0].axhline(y=0, color='r', linestyle='--', linewidth=2, label='Zero Error')
-            axes[0].legend()
-
-            # Histogram of absolute errors
-            for model_name, error in errors.items():
-                axes[1].hist(np.abs(error), alpha=0.5, bins=20, label=model_name, edgecolor='black')
-
-            axes[1].set_xlabel('Absolute Prediction Error', fontsize=11)
-            axes[1].set_ylabel('Frequency', fontsize=11)
-            axes[1].set_title('Absolute Error Distribution', fontsize=12, fontweight='bold')
-            axes[1].legend()
-            axes[1].grid(True, alpha=0.3)
-
-        plt.tight_layout()
-        plot_path = os.path.join(self.reports_dir, 'evaluation_error_distribution.png')
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        logger.info(f"Saved error distribution plot to {plot_path}")
-
-    def _plot_model_performance_comparison(self, results: pd.DataFrame, model_names: List[str]):
-        """Compare model performance on evaluation set."""
-        from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-
-        y_true = results['true_value']
-        metrics = []
-
-        for model_name in model_names:
-            y_pred = results[f'{model_name}_pred']
-            valid_mask = ~(y_pred.isna() | y_true.isna())
-
-            if valid_mask.sum() > 0:
-                y_true_valid = y_true[valid_mask]
-                y_pred_valid = y_pred[valid_mask]
-
-                metrics.append({
-                    'Model': model_name,
-                    'R²': r2_score(y_true_valid, y_pred_valid),
-                    'MSE': mean_squared_error(y_true_valid, y_pred_valid),
-                    'MAE': mean_absolute_error(y_true_valid, y_pred_valid)
-                })
-
-        metrics_df = pd.DataFrame(metrics).sort_values('R²', ascending=False)
-
-        # Create bar plots
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-        # R² Score
-        axes[0].barh(metrics_df['Model'], metrics_df['R²'], color='forestgreen', edgecolor='black')
-        axes[0].set_xlabel('R² Score', fontsize=11)
-        axes[0].set_title('Model R² on Evaluation Set', fontsize=12, fontweight='bold')
-        axes[0].grid(True, alpha=0.3, axis='x')
-
-        # MSE
-        axes[1].barh(metrics_df['Model'], metrics_df['MSE'], color='steelblue', edgecolor='black')
-        axes[1].set_xlabel('MSE', fontsize=11)
-        axes[1].set_title('Model MSE on Evaluation Set', fontsize=12, fontweight='bold')
-        axes[1].grid(True, alpha=0.3, axis='x')
-
-        # MAE
-        axes[2].barh(metrics_df['Model'], metrics_df['MAE'], color='coral', edgecolor='black')
-        axes[2].set_xlabel('MAE', fontsize=11)
-        axes[2].set_title('Model MAE on Evaluation Set', fontsize=12, fontweight='bold')
-        axes[2].grid(True, alpha=0.3, axis='x')
-
-        plt.tight_layout()
-        plot_path = os.path.join(self.reports_dir, 'evaluation_model_comparison.png')
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        logger.info(f"Saved model comparison plot to {plot_path}")
-
-        # Save metrics to CSV
-        metrics_path = os.path.join(self.reports_dir, 'evaluation_metrics.csv')
-        metrics_df.to_csv(metrics_path, index=False)
-        logger.info(f"Saved evaluation metrics to {metrics_path}")
-
-        return metrics_df
+        logger.info(f"Saved prediction distributions to {plot_path}")
 
     def _plot_prediction_correlations(self, results: pd.DataFrame, model_names: List[str]):
         """Plot correlation heatmap between model predictions."""
         pred_cols = [f'{name}_pred' for name in model_names]
-        pred_data = results[pred_cols + ['true_value']].dropna()
+        pred_data = results[pred_cols].dropna()
 
         if len(pred_data) == 0:
             logger.warning("No valid data for correlation plot")
             return
 
         # Rename columns for display
-        display_names = model_names + ['Ground Truth']
-        pred_data.columns = display_names
+        pred_data.columns = model_names
 
         corr_matrix = pred_data.corr()
 
         plt.figure(figsize=(10, 8))
         sns.heatmap(corr_matrix, annot=True, fmt='.3f', cmap='coolwarm',
                    center=0.5, square=True, linewidths=1,
-                   cbar_kws={'shrink': 0.8})
-        plt.title('Prediction Correlation Matrix', fontsize=14, fontweight='bold', pad=20)
+                   cbar_kws={'shrink': 0.8}, vmin=0, vmax=1)
+        plt.title('Model Prediction Correlation Matrix\n(Model Agreement)', fontsize=14, fontweight='bold', pad=20)
         plt.tight_layout()
 
         plot_path = os.path.join(self.reports_dir, 'evaluation_prediction_correlations.png')
@@ -310,108 +177,138 @@ class ModelEvaluator:
         plt.close()
         logger.info(f"Saved prediction correlation plot to {plot_path}")
 
-    def _plot_top_model_scatter(self, results: pd.DataFrame, model_names: List[str]):
-        """Create detailed scatter plots for top 4 models."""
-        from sklearn.metrics import r2_score
+    def _plot_consensus_predictions(self, results: pd.DataFrame):
+        """Plot consensus predictions with uncertainty bands."""
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
-        y_true = results['true_value']
+        # Sort by consensus prediction
+        sorted_results = results.sort_values('consensus_pred')
+        x = range(len(sorted_results))
 
-        # Calculate R² for each model
-        model_scores = []
-        for model_name in model_names:
-            y_pred = results[f'{model_name}_pred']
-            valid_mask = ~(y_pred.isna() | y_true.isna())
-            if valid_mask.sum() > 0:
-                r2 = r2_score(y_true[valid_mask], y_pred[valid_mask])
-                model_scores.append((model_name, r2))
+        # Plot 1: Consensus with error bars
+        axes[0].errorbar(x, sorted_results['consensus_pred'],
+                        yerr=sorted_results['prediction_std'],
+                        fmt='o', markersize=4, alpha=0.6, capsize=3, elinewidth=1)
+        axes[0].set_xlabel('Molecule Index (sorted by LogD)', fontsize=11)
+        axes[0].set_ylabel('Predicted LogD', fontsize=11)
+        axes[0].set_title('Consensus Predictions with Uncertainty\n(error bars = std across models)',
+                         fontsize=12, fontweight='bold')
+        axes[0].grid(True, alpha=0.3)
 
-        # Sort and take top 4
-        model_scores.sort(key=lambda x: x[1], reverse=True)
-        top_models = [name for name, _ in model_scores[:4]]
-
-        fig, axes = plt.subplots(2, 2, figsize=(12, 12))
-        axes = axes.flatten()
-
-        for idx, model_name in enumerate(top_models):
-            y_pred = results[f'{model_name}_pred']
-            valid_mask = ~(y_pred.isna() | y_true.isna())
-
-            y_true_valid = y_true[valid_mask]
-            y_pred_valid = y_pred[valid_mask]
-
-            # Scatter with density coloring
-            axes[idx].scatter(y_true_valid, y_pred_valid, alpha=0.6, s=50,
-                            c=range(len(y_true_valid)), cmap='viridis',
-                            edgecolors='black', linewidth=0.5)
-
-            # Perfect prediction line
-            min_val = min(y_true_valid.min(), y_pred_valid.min())
-            max_val = max(y_true_valid.max(), y_pred_valid.max())
-            axes[idx].plot([min_val, max_val], [min_val, max_val],
-                          'r--', linewidth=3, label='Perfect Prediction')
-
-            # Calculate metrics
-            from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-            r2 = r2_score(y_true_valid, y_pred_valid)
-            mse = mean_squared_error(y_true_valid, y_pred_valid)
-            mae = mean_absolute_error(y_true_valid, y_pred_valid)
-
-            axes[idx].set_xlabel('Ground Truth', fontsize=12)
-            axes[idx].set_ylabel('Predicted Value', fontsize=12)
-            axes[idx].set_title(f'{model_name}\nR²={r2:.3f}, MSE={mse:.4f}, MAE={mae:.4f}',
-                              fontsize=13, fontweight='bold')
-            axes[idx].legend(fontsize=10)
-            axes[idx].grid(True, alpha=0.3)
+        # Plot 2: Prediction uncertainty distribution
+        axes[1].hist(sorted_results['prediction_std'], bins=30, edgecolor='black', alpha=0.7, color='coral')
+        axes[1].set_xlabel('Prediction Std Dev', fontsize=11)
+        axes[1].set_ylabel('Count', fontsize=11)
+        axes[1].set_title(f'Prediction Uncertainty Distribution\nMean Uncertainty: {sorted_results["prediction_std"].mean():.3f}',
+                         fontsize=12, fontweight='bold')
+        axes[1].grid(True, alpha=0.3)
+        axes[1].axvline(sorted_results['prediction_std'].mean(), color='red',
+                       linestyle='--', linewidth=2, label='Mean')
+        axes[1].legend()
 
         plt.tight_layout()
-        plot_path = os.path.join(self.reports_dir, 'evaluation_top_models_detailed.png')
+        plot_path = os.path.join(self.reports_dir, 'evaluation_consensus_predictions.png')
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
-        logger.info(f"Saved top models detailed plot to {plot_path}")
+        logger.info(f"Saved consensus predictions plot to {plot_path}")
 
-    def generate_report(self, results: pd.DataFrame, metrics_df: pd.DataFrame):
-        """Generate comprehensive evaluation report."""
+    def _plot_top_molecules(self, results: pd.DataFrame):
+        """Plot top and bottom molecules by predicted lipophilicity."""
+        # Sort by consensus prediction
+        sorted_results = results.sort_values('consensus_pred')
+
+        fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+
+        # Top 20 most lipophilic
+        top_20 = sorted_results.tail(20)
+        axes[0].barh(range(len(top_20)), top_20['consensus_pred'],
+                    xerr=top_20['prediction_std'], color='darkgreen',
+                    alpha=0.7, edgecolor='black', capsize=3)
+        axes[0].set_yticks(range(len(top_20)))
+        axes[0].set_yticklabels(top_20['name'], fontsize=9)
+        axes[0].set_xlabel('Predicted LogD', fontsize=11)
+        axes[0].set_title('Top 20 Most Lipophilic Molecules (Highest LogD)',
+                         fontsize=12, fontweight='bold')
+        axes[0].grid(True, alpha=0.3, axis='x')
+
+        # Bottom 20 least lipophilic
+        bottom_20 = sorted_results.head(20)
+        axes[1].barh(range(len(bottom_20)), bottom_20['consensus_pred'],
+                    xerr=bottom_20['prediction_std'], color='darkblue',
+                    alpha=0.7, edgecolor='black', capsize=3)
+        axes[1].set_yticks(range(len(bottom_20)))
+        axes[1].set_yticklabels(bottom_20['name'], fontsize=9)
+        axes[1].set_xlabel('Predicted LogD', fontsize=11)
+        axes[1].set_title('Top 20 Least Lipophilic Molecules (Lowest LogD)',
+                         fontsize=12, fontweight='bold')
+        axes[1].grid(True, alpha=0.3, axis='x')
+
+        plt.tight_layout()
+        plot_path = os.path.join(self.reports_dir, 'evaluation_top_molecules.png')
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        logger.info(f"Saved top molecules plot to {plot_path}")
+
+    def generate_report(self, results: pd.DataFrame):
+        """Generate comprehensive evaluation report for lipophilicity predictions."""
         report_path = os.path.join(self.reports_dir, 'evaluation_report.md')
 
+        # Get model names
+        pred_cols = [col for col in results.columns if col.endswith('_pred') and col != 'consensus_pred']
+        model_names = [col.replace('_pred', '') for col in pred_cols]
+
         with open(report_path, 'w') as f:
-            f.write("# Model Evaluation Report - New Molecules\n\n")
+            f.write("# Lipophilicity Prediction Report - Evaluation Set\n\n")
             f.write(f"**Date**: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
-            f.write("## Evaluation Summary\n\n")
+            f.write("## Summary\n\n")
             f.write(f"- Total molecules evaluated: **{len(results)}**\n")
-            f.write(f"- Successfully processed: **{results['true_value'].notna().sum()}**\n")
-            f.write(f"- Models evaluated: **{len(metrics_df)}**\n\n")
+            f.write(f"- Models used: **{len(model_names)}** ({', '.join(model_names)})\n")
+            f.write(f"- Consensus mean LogD: **{results['consensus_pred'].mean():.2f} ± {results['consensus_pred'].std():.2f}**\n")
+            f.write(f"- Average prediction uncertainty: **{results['prediction_std'].mean():.3f}**\n\n")
 
-            f.write("## Model Performance Rankings\n\n")
-            f.write("Models ranked by R² score:\n\n")
-            f.write("| Rank | Model | R² | MSE | MAE |\n")
-            f.write("|------|-------|-----|-----|-----|\n")
+            f.write("## Prediction Statistics by Model\n\n")
+            f.write("| Model | Mean LogD | Std Dev | Min | Max |\n")
+            f.write("|-------|-----------|---------|-----|-----|\n")
 
-            for rank, (_, row) in enumerate(metrics_df.iterrows(), 1):
-                f.write(f"| {rank} | {row['Model']} | {row['R²']:.4f} | {row['MSE']:.4f} | {row['MAE']:.4f} |\n")
+            for model_name in model_names:
+                preds = results[f'{model_name}_pred'].dropna()
+                f.write(f"| {model_name} | {preds.mean():.2f} | {preds.std():.2f} | {preds.min():.2f} | {preds.max():.2f} |\n")
 
-            f.write("\n## Best Model\n\n")
-            best_model = metrics_df.iloc[0]
-            f.write(f"🏆 **{best_model['Model']}**\n\n")
-            f.write(f"- R² Score: **{best_model['R²']:.4f}** (explains {best_model['R²']*100:.1f}% of variance)\n")
-            f.write(f"- MSE: **{best_model['MSE']:.4f}**\n")
-            f.write(f"- MAE: **{best_model['MAE']:.4f}**\n\n")
+            f.write(f"\n## Top 10 Most Lipophilic Molecules\n\n")
+            top_10 = results.nlargest(10, 'consensus_pred')
+            f.write("| Rank | Molecule | Predicted LogD | Uncertainty |\n")
+            f.write("|------|----------|----------------|-------------|\n")
+            for rank, (_, row) in enumerate(top_10.iterrows(), 1):
+                f.write(f"| {rank} | {row['name']} | {row['consensus_pred']:.2f} | ±{row['prediction_std']:.3f} |\n")
 
-            f.write("## Visualizations\n\n")
-            f.write("### 1. Prediction vs Ground Truth\n")
-            f.write("![Pred vs Truth](evaluation_pred_vs_truth.png)\n\n")
+            f.write(f"\n## Top 10 Least Lipophilic Molecules\n\n")
+            bottom_10 = results.nsmallest(10, 'consensus_pred')
+            f.write("| Rank | Molecule | Predicted LogD | Uncertainty |\n")
+            f.write("|------|----------|----------------|-------------|\n")
+            for rank, (_, row) in enumerate(bottom_10.iterrows(), 1):
+                f.write(f"| {rank} | {row['name']} | {row['consensus_pred']:.2f} | ±{row['prediction_std']:.3f} |\n")
 
-            f.write("### 2. Error Distribution\n")
-            f.write("![Error Distribution](evaluation_error_distribution.png)\n\n")
+            f.write("\n## Visualizations\n\n")
+            f.write("### 1. Prediction Distributions\n")
+            f.write("![Prediction Distributions](evaluation_prediction_distributions.png)\n\n")
 
-            f.write("### 3. Model Comparison\n")
-            f.write("![Model Comparison](evaluation_model_comparison.png)\n\n")
+            f.write("### 2. Model Agreement (Correlations)\n")
+            f.write("![Model Correlations](evaluation_prediction_correlations.png)\n\n")
 
-            f.write("### 4. Prediction Correlations\n")
-            f.write("![Correlations](evaluation_prediction_correlations.png)\n\n")
+            f.write("### 3. Consensus Predictions\n")
+            f.write("![Consensus](evaluation_consensus_predictions.png)\n\n")
 
-            f.write("### 5. Top Models Detailed\n")
-            f.write("![Top Models](evaluation_top_models_detailed.png)\n\n")
+            f.write("### 4. Top/Bottom Molecules\n")
+            f.write("![Top Molecules](evaluation_top_molecules.png)\n\n")
+
+            f.write("## Notes\n\n")
+            f.write("- LogD is the octanol-water distribution coefficient at pH 7.4\n")
+            f.write("- Higher LogD = more lipophilic (fat-soluble)\n")
+            f.write("- Lower LogD = more hydrophilic (water-soluble)\n")
+            f.write("- Typical drug LogD range: -0.4 to 5.6\n")
+            f.write("- Consensus prediction is the mean across all models\n")
+            f.write("- Uncertainty is the standard deviation across model predictions\n")
 
         logger.info(f"Saved evaluation report to {report_path}")
 
@@ -421,7 +318,7 @@ def main():
 
     # Get evaluation molecules from config
     eval_molecules = config['evaluation']['molecules']
-    logger.info(f"Evaluating models on {len(eval_molecules)} new molecules")
+    logger.info(f"Evaluating lipophilicity for {len(eval_molecules)} molecules")
 
     # Initialize evaluator
     evaluator = ModelEvaluator(config)
@@ -435,48 +332,23 @@ def main():
     results.to_csv(results_path, index=False)
     logger.info(f"Saved results to {results_path}")
 
-    # Get prediction columns
-    pred_cols = [col for col in results.columns if col.endswith('_pred')]
-    model_names = [col.replace('_pred', '') for col in pred_cols]
-    valid_models = [name for name, col in zip(model_names, pred_cols)
-                   if not results[col].isna().all()]
-
     # Generate visualizations
     evaluator.create_evaluation_visualizations(results)
 
-    # Calculate and display metrics
-    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-    y_true = results['true_value']
-
-    metrics = []
-    for model_name in valid_models:
-        y_pred = results[f'{model_name}_pred']
-        valid_mask = ~(y_pred.isna() | y_true.isna())
-
-        if valid_mask.sum() > 0:
-            y_true_valid = y_true[valid_mask]
-            y_pred_valid = y_pred[valid_mask]
-
-            metrics.append({
-                'Model': model_name,
-                'R²': r2_score(y_true_valid, y_pred_valid),
-                'MSE': mean_squared_error(y_true_valid, y_pred_valid),
-                'MAE': mean_absolute_error(y_true_valid, y_pred_valid)
-            })
-
-    metrics_df = pd.DataFrame(metrics).sort_values('R²', ascending=False)
-
     # Generate report
-    evaluator.generate_report(results, metrics_df)
+    evaluator.generate_report(results)
 
     # Print summary
     logger.info(f"\n{'='*60}")
-    logger.info("EVALUATION RESULTS SUMMARY")
+    logger.info("LIPOPHILICITY PREDICTION SUMMARY")
     logger.info(f"{'='*60}")
-    logger.info(f"\n{metrics_df.to_string(index=False)}\n")
+    logger.info(f"Molecules processed: {len(results)}")
+    logger.info(f"Mean predicted LogD: {results['consensus_pred'].mean():.2f}")
+    logger.info(f"LogD range: [{results['consensus_pred'].min():.2f}, {results['consensus_pred'].max():.2f}]")
+    logger.info(f"Average uncertainty: {results['prediction_std'].mean():.3f}")
     logger.info(f"{'='*60}")
 
-    return results, metrics_df
+    return results
 
 if __name__ == "__main__":
     main()

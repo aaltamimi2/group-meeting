@@ -12,6 +12,8 @@ import joblib
 import os
 import time
 from src.utils import setup_logging, load_config, ensure_directory
+from src.lipophilicity_data import load_lipophilicity_dataset
+from src.featurize import MolecularFeaturizer
 
 # Set style for better-looking plots
 sns.set_style('whitegrid')
@@ -296,15 +298,15 @@ class ModelTrainer:
 
         # Histogram
         axes[0].hist(y, bins=30, edgecolor='black', alpha=0.7, color='steelblue')
-        axes[0].set_title('Target Variable Distribution')
-        axes[0].set_xlabel('Target Value')
+        axes[0].set_title('Lipophilicity (LogD) Distribution')
+        axes[0].set_xlabel('LogD at pH 7.4')
         axes[0].set_ylabel('Count')
         axes[0].grid(True, alpha=0.3)
 
         # Box plot
         axes[1].boxplot(y, vert=True)
-        axes[1].set_title('Target Variable Box Plot')
-        axes[1].set_ylabel('Target Value')
+        axes[1].set_title('Lipophilicity (LogD) Box Plot')
+        axes[1].set_ylabel('LogD at pH 7.4')
         axes[1].grid(True, alpha=0.3)
 
         # Add statistics
@@ -335,8 +337,8 @@ class ModelTrainer:
         for idx, col in enumerate(available):
             axes[idx].scatter(df[col], y, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
             axes[idx].set_xlabel(col, fontsize=11)
-            axes[idx].set_ylabel('Target Value', fontsize=11)
-            axes[idx].set_title(f'Target vs {col}', fontsize=12)
+            axes[idx].set_ylabel('LogD at pH 7.4', fontsize=11)
+            axes[idx].set_title(f'LogD vs {col}', fontsize=12)
             axes[idx].grid(True, alpha=0.3)
 
             # Add trend line
@@ -437,24 +439,31 @@ def main():
     """Main function to train models."""
     config = load_config()
 
-    # Load processed data (try pkl first for speed, fallback to CSV)
-    data_path = config['output']['processed_data']
-    pkl_path = data_path.replace('.csv', '.pkl')
+    # Load lipophilicity dataset
+    logger.info("="*60)
+    logger.info("LOADING LIPOPHILICITY DATASET (4,200 molecules)")
+    logger.info("="*60)
+    mol_df, y = load_lipophilicity_dataset()
 
-    if os.path.exists(pkl_path):
-        logger.info(f"Loading processed data from {pkl_path} (fast pkl)")
-        df = joblib.load(pkl_path)
-        logger.info(f"Loaded {len(df)} molecules from cached pkl file")
+    # Featurize the molecules
+    pkl_cache_path = 'data/processed/lipophilicity_features.pkl'
+
+    if os.path.exists(pkl_cache_path):
+        logger.info(f"\nLoading cached features from {pkl_cache_path}")
+        df = joblib.load(pkl_cache_path)
+        logger.info(f"Loaded {len(df)} featurized molecules from cache")
     else:
-        logger.info(f"Loading processed data from {data_path} (CSV)")
-        df = pd.read_csv(data_path)
-        logger.info(f"Loaded {len(df)} molecules from CSV (tip: pkl cache will be created on next featurization)")
+        logger.info("\nFeaturizing molecules (this may take a few minutes)...")
+        featurizer = MolecularFeaturizer(config)
+        df = featurizer.featurize_dataset(mol_df)
+
+        # Save featurized data for faster loading
+        ensure_directory('data/processed')
+        joblib.dump(df, pkl_cache_path)
+        logger.info(f"Saved featurized data to {pkl_cache_path}")
 
     # Initialize trainer
     trainer = ModelTrainer(config)
-
-    # Create synthetic target
-    y = trainer.create_synthetic_target(df)
 
     # Visualize dataset before training
     trainer.visualize_dataset(df, y)
