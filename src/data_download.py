@@ -150,15 +150,32 @@ class PubChemDownloader:
 
 def main():
     """Main function to download molecular data."""
+    import sys
+    from src.molecule_list import get_large_molecule_list, get_sample_molecules
+
     config = load_config()
 
-    # Example molecule list
-    molecules = [
-        'aspirin', 'caffeine', 'ibuprofen', 'paracetamol',
-        'morphine', 'codeine', 'nicotine', 'glucose',
-        'dopamine', 'serotonin', 'acetaminophen', 'warfarin',
-        'penicillin', 'insulin', 'metformin'
-    ]
+    # Determine which molecule list to use
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--large':
+            molecules = get_large_molecule_list()
+            logger.info(f"Using LARGE molecule list: {len(molecules)} molecules")
+        elif sys.argv[1] == '--sample':
+            n_molecules = int(sys.argv[2]) if len(sys.argv) > 2 else 100
+            molecules = get_sample_molecules(n_molecules)
+            logger.info(f"Using SAMPLE of {len(molecules)} molecules")
+        else:
+            logger.error("Usage: python -m src.data_download [--large | --sample N]")
+            sys.exit(1)
+    else:
+        # Default: small test set
+        molecules = [
+            'aspirin', 'caffeine', 'ibuprofen', 'paracetamol',
+            'morphine', 'codeine', 'nicotine', 'glucose',
+            'dopamine', 'serotonin', 'acetaminophen', 'warfarin',
+        ]
+        logger.info(f"Using DEFAULT test set: {len(molecules)} molecules")
+        logger.info("Tip: Use '--large' for 1000+ molecules or '--sample N' for N random molecules")
 
     downloader = PubChemDownloader(config)
     df = downloader.download_molecules(molecules)

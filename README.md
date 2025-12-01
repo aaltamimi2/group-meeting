@@ -57,13 +57,25 @@ project-root/
 ### 1. Download Molecular Data
 
 ```bash
+# Download small test set (12 molecules)
 python -m src.data_download
+
+# Download LARGE dataset (1000+ molecules)
+python -m src.data_download --large
+
+# Download random sample (e.g., 200 molecules)
+python -m src.data_download --sample 200
 ```
 
-This downloads molecular data from PubChem for a predefined list of molecules and saves it to `data/raw/molecules.csv`.
+This downloads molecular data from PubChem and saves it to `data/raw/molecules.csv`.
+
+**Molecule Lists**:
+- **Default**: 12 common drugs for testing
+- **Large** (1000+): Comprehensive list including drugs, natural products, amino acids, vitamins, neurotransmitters, steroids, and more
+- **Sample**: Random subset from the large list
 
 **Output**:
-- Canonical SMILES
+- Isomeric SMILES
 - InChI
 - Molecular weight
 - XLogP3
@@ -89,17 +101,28 @@ This generates molecular features:
 python -m src.train
 ```
 
-Trains two models:
-- Ridge regression (linear model)
-- Random Forest (nonlinear ensemble model)
+Trains **7 machine learning models** with automatic comparison:
+
+**Linear Models**:
+- Ridge (L2 regularization)
+- Lasso (L1 regularization)
+- ElasticNet (L1 + L2)
+- SGD (Stochastic Gradient Descent)
+
+**Nonlinear Models**:
+- Decision Tree
+- K-Nearest Neighbors (KNN)
+- Random Forest
 
 Also creates comprehensive dataset visualizations before training.
 
 **Outputs**:
-- `models/ridge_model.pkl` - Trained Ridge model
-- `models/random_forest_model.pkl` - Trained Random Forest model
-- `reports/training_metrics.csv` - Model performance metrics
-- `reports/feature_importance.png` - Top 20 important features
+- `models/*.pkl` - All 7 trained models
+- `reports/training_metrics.csv` - Comparison table (MSE, MAE, R², training time)
+- `reports/feature_importance_*.png` - Feature importance for tree models
+- `reports/model_comparison_metrics.png` - 4-panel comparison (MSE, R², MAE, Time)
+- `reports/model_train_vs_test.png` - Overfitting analysis
+- `reports/model_performance_vs_speed.png` - Performance/speed trade-off scatter
 - `reports/dataset_property_distributions.png` - Molecular property histograms
 - `reports/dataset_correlation_heatmap.png` - Descriptor correlation matrix
 - `reports/dataset_target_distribution.png` - Target variable distribution

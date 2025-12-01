@@ -3,11 +3,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge, Lasso, ElasticNet, SGDRegressor
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import joblib
 import os
+import time
 from src.utils import setup_logging, load_config, ensure_directory
 
 # Set style for better-looking plots
@@ -167,6 +170,49 @@ class ModelTrainer:
         plt.close()
         logger.info(f"Saved feature importance plot to {plot_path}")
 
+    def train_model_generic(self, model, model_name, X_train, y_train, X_test, y_test):
+        """Generic method to train and evaluate any model."""
+        logger.info(f"Training {model_name} model...")
+
+        start_time = time.time()
+
+        # Cross-validation
+        cv_scores = cross_val_score(model, X_train, y_train,
+                                    cv=self.cv_folds,
+                                    scoring='neg_mean_squared_error')
+        cv_time = time.time() - start_time
+        logger.info(f"{model_name} CV MSE: {-cv_scores.mean():.4f} (+/- {cv_scores.std():.4f}) [{cv_time:.2f}s]")
+
+        # Train on full training set
+        train_start = time.time()
+        model.fit(X_train, y_train)
+        train_time = time.time() - train_start
+
+        # Evaluate
+        train_pred = model.predict(X_train)
+        test_pred = model.predict(X_test)
+
+        metrics = {
+            'train_mse': mean_squared_error(y_train, train_pred),
+            'test_mse': mean_squared_error(y_test, test_pred),
+            'train_mae': mean_absolute_error(y_train, train_pred),
+            'test_mae': mean_absolute_error(y_test, test_pred),
+            'train_r2': r2_score(y_train, train_pred),
+            'test_r2': r2_score(y_test, test_pred),
+            'cv_time': cv_time,
+            'train_time': train_time
+        }
+
+        logger.info(f"{model_name} - Test MSE: {metrics['test_mse']:.4f}, R2: {metrics['test_r2']:.4f}, Time: {train_time:.2f}s")
+
+        # Save model
+        model_filename = f"{model_name.lower().replace(' ', '_')}_model.pkl"
+        model_path = os.path.join(self.model_dir, model_filename)
+        joblib.dump(model, model_path)
+        logger.info(f"Saved {model_name} model to {model_path}")
+
+        return model, metrics
+
     def visualize_dataset(self, df: pd.DataFrame, y: np.ndarray):
         """Create comprehensive visualizations of the training dataset."""
         logger.info("Creating dataset visualizations...")
@@ -305,6 +351,88 @@ class ModelTrainer:
         plt.close()
         logger.info(f"Saved property relationships to {plot_path}")
 
+def create_model_comparison_plots(metrics_df: pd.DataFrame, reports_dir: str):
+    """Create comprehensive model comparison visualizations."""
+
+    # 1. Test MSE Comparison
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+
+    # Test MSE
+    axes[0, 0].barh(metrics_df['Model'], metrics_df['Test MSE'], color='steelblue', edgecolor='black')
+    axes[0, 0].set_xlabel('Test MSE', fontsize=11)
+    axes[0, 0].set_title('Model Comparison: Test MSE (lower is better)', fontsize=12, fontweight='bold')
+    axes[0, 0].grid(True, alpha=0.3, axis='x')
+
+    # Test R² Score
+    axes[0, 1].barh(metrics_df['Model'], metrics_df['Test R2'], color='forestgreen', edgecolor='black')
+    axes[0, 1].set_xlabel('Test R² Score', fontsize=11)
+    axes[0, 1].set_title('Model Comparison: Test R² (higher is better)', fontsize=12, fontweight='bold')
+    axes[0, 1].grid(True, alpha=0.3, axis='x')
+
+    # Training Time
+    axes[1, 0].barh(metrics_df['Model'], metrics_df['Train Time (s)'], color='coral', edgecolor='black')
+    axes[1, 0].set_xlabel('Training Time (seconds)', fontsize=11)
+    axes[1, 0].set_title('Model Comparison: Training Time', fontsize=12, fontweight='bold')
+    axes[1, 0].grid(True, alpha=0.3, axis='x')
+
+    # Test MAE
+    axes[1, 1].barh(metrics_df['Model'], metrics_df['Test MAE'], color='purple', edgecolor='black')
+    axes[1, 1].set_xlabel('Test MAE', fontsize=11)
+    axes[1, 1].set_title('Model Comparison: Test MAE (lower is better)', fontsize=12, fontweight='bold')
+    axes[1, 1].grid(True, alpha=0.3, axis='x')
+
+    plt.tight_layout()
+    plot_path = os.path.join(reports_dir, 'model_comparison_metrics.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info(f"Saved model comparison plot to {plot_path}")
+
+    # 2. Train vs Test Performance
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    x = np.arange(len(metrics_df))
+    width = 0.35
+
+    ax.bar(x - width/2, metrics_df['Train MSE'], width, label='Train MSE', color='lightblue', edgecolor='black')
+    ax.bar(x + width/2, metrics_df['Test MSE'], width, label='Test MSE', color='steelblue', edgecolor='black')
+
+    ax.set_xlabel('Model', fontsize=12)
+    ax.set_ylabel('MSE', fontsize=12)
+    ax.set_title('Train vs Test MSE by Model', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(metrics_df['Model'], rotation=45, ha='right')
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
+
+    plt.tight_layout()
+    plot_path = os.path.join(reports_dir, 'model_train_vs_test.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info(f"Saved train vs test comparison to {plot_path}")
+
+    # 3. Performance vs Speed Trade-off
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    scatter = ax.scatter(metrics_df['Train Time (s)'], metrics_df['Test R2'],
+                        s=200, c=range(len(metrics_df)), cmap='viridis',
+                        edgecolors='black', linewidth=2, alpha=0.7)
+
+    # Annotate points
+    for idx, row in metrics_df.iterrows():
+        ax.annotate(row['Model'], (row['Train Time (s)'], row['Test R2']),
+                   xytext=(5, 5), textcoords='offset points', fontsize=9)
+
+    ax.set_xlabel('Training Time (seconds)', fontsize=12)
+    ax.set_ylabel('Test R² Score', fontsize=12)
+    ax.set_title('Model Performance vs Training Speed', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plot_path = os.path.join(reports_dir, 'model_performance_vs_speed.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info(f"Saved performance vs speed plot to {plot_path}")
+
 def main():
     """Main function to train models."""
     config = load_config()
@@ -332,27 +460,78 @@ def main():
     )
 
     logger.info(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
+    logger.info(f"Feature dimensions: {X_train.shape[1]} features")
 
-    # Train models
-    ridge_model, ridge_metrics = trainer.train_ridge_model(X_train, y_train, X_test, y_test)
-    rf_model, rf_metrics = trainer.train_random_forest_model(X_train, y_train, X_test, y_test)
+    # Define all models to train
+    models = [
+        (Ridge(alpha=1.0, random_state=trainer.random_state), 'Ridge'),
+        (Lasso(alpha=0.1, random_state=trainer.random_state, max_iter=5000), 'Lasso'),
+        (ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=trainer.random_state, max_iter=5000), 'ElasticNet'),
+        (SGDRegressor(random_state=trainer.random_state, max_iter=5000), 'SGD'),
+        (DecisionTreeRegressor(max_depth=10, random_state=trainer.random_state), 'Decision Tree'),
+        (KNeighborsRegressor(n_neighbors=5, n_jobs=-1), 'KNN'),
+        (RandomForestRegressor(n_estimators=100, max_depth=10, random_state=trainer.random_state, n_jobs=-1), 'Random Forest'),
+    ]
+
+    # Train all models and collect metrics
+    logger.info(f"\n{'='*60}")
+    logger.info(f"Training {len(models)} models...")
+    logger.info(f"{'='*60}\n")
+
+    all_models = {}
+    all_metrics = {}
+
+    for model, name in models:
+        trained_model, metrics = trainer.train_model_generic(model, name, X_train, y_train, X_test, y_test)
+        all_models[name] = trained_model
+        all_metrics[name] = metrics
+
+        # Plot feature importance for tree-based models
+        if name in ['Decision Tree', 'Random Forest'] and hasattr(trained_model, 'feature_importances_'):
+            plot_name = name.lower().replace(' ', '_')
+            trainer.plot_feature_importance(trained_model, X_train.columns, top_n=20)
+            # Rename to include model name
+            old_path = os.path.join(trainer.reports_dir, 'feature_importance.png')
+            new_path = os.path.join(trainer.reports_dir, f'feature_importance_{plot_name}.png')
+            if os.path.exists(old_path):
+                os.rename(old_path, new_path)
+
+    # Create comparison metrics DataFrame
+    metrics_data = []
+    for name in all_metrics:
+        metrics = all_metrics[name]
+        metrics_data.append({
+            'Model': name,
+            'Train MSE': metrics['train_mse'],
+            'Test MSE': metrics['test_mse'],
+            'Train MAE': metrics['train_mae'],
+            'Test MAE': metrics['test_mae'],
+            'Train R2': metrics['train_r2'],
+            'Test R2': metrics['test_r2'],
+            'CV Time (s)': metrics['cv_time'],
+            'Train Time (s)': metrics['train_time']
+        })
+
+    metrics_df = pd.DataFrame(metrics_data)
+    metrics_df = metrics_df.sort_values('Test MSE')  # Sort by test error
 
     # Save metrics
-    metrics_df = pd.DataFrame({
-        'Model': ['Ridge', 'Random Forest'],
-        'Train MSE': [ridge_metrics['train_mse'], rf_metrics['train_mse']],
-        'Test MSE': [ridge_metrics['test_mse'], rf_metrics['test_mse']],
-        'Train MAE': [ridge_metrics['train_mae'], rf_metrics['train_mae']],
-        'Test MAE': [ridge_metrics['test_mae'], rf_metrics['test_mae']],
-        'Train R2': [ridge_metrics['train_r2'], rf_metrics['train_r2']],
-        'Test R2': [ridge_metrics['test_r2'], rf_metrics['test_r2']]
-    })
-
     metrics_path = os.path.join(config['output']['reports_dir'], 'training_metrics.csv')
     metrics_df.to_csv(metrics_path, index=False)
-    logger.info(f"Saved training metrics to {metrics_path}")
+    logger.info(f"\nSaved training metrics to {metrics_path}")
 
-    return ridge_model, rf_model, metrics_df
+    # Print summary
+    logger.info(f"\n{'='*60}")
+    logger.info("MODEL PERFORMANCE SUMMARY")
+    logger.info(f"{'='*60}")
+    logger.info(f"\n{metrics_df.to_string(index=False)}\n")
+    logger.info(f"{'='*60}")
+
+    # Create model comparison visualizations
+    logger.info("\nCreating model comparison visualizations...")
+    create_model_comparison_plots(metrics_df, trainer.reports_dir)
+
+    return all_models, metrics_df
 
 if __name__ == "__main__":
     main()
