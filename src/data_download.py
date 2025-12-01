@@ -63,6 +63,8 @@ class PubChemDownloader:
         if data and 'PropertyTable' in data:
             props = data['PropertyTable']['Properties'][0]
             logger.info(f"Retrieved properties for CID {cid}")
+            logger.debug(f"  Keys in response: {list(props.keys())}")
+            logger.debug(f"  CanonicalSMILES value: {props.get('CanonicalSMILES', 'KEY_NOT_FOUND')}")
             return props
 
         logger.warning(f"Could not retrieve properties for CID {cid}")
