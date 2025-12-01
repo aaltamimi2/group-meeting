@@ -41,6 +41,7 @@ venv.bak/
 # Data files (keep structure, ignore large files)
 data/raw/*.csv
 data/processed/*.csv
+data/processed/*.pkl
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 

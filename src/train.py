@@ -437,10 +437,18 @@ def main():
     """Main function to train models."""
     config = load_config()
 
-    # Load processed data
+    # Load processed data (try pkl first for speed, fallback to CSV)
     data_path = config['output']['processed_data']
-    logger.info(f"Loading processed data from {data_path}")
-    df = pd.read_csv(data_path)
+    pkl_path = data_path.replace('.csv', '.pkl')
+
+    if os.path.exists(pkl_path):
+        logger.info(f"Loading processed data from {pkl_path} (fast pkl)")
+        df = joblib.load(pkl_path)
+        logger.info(f"Loaded {len(df)} molecules from cached pkl file")
+    else:
+        logger.info(f"Loading processed data from {data_path} (CSV)")
+        df = pd.read_csv(data_path)
+        logger.info(f"Loaded {len(df)} molecules from CSV (tip: pkl cache will be created on next featurization)")
 
     # Initialize trainer
     trainer = ModelTrainer(config)
@@ -454,10 +462,27 @@ def main():
     # Prepare features
     X = trainer.prepare_features(df)
 
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=trainer.test_size, random_state=trainer.random_state
-    )
+    # Check for cached train/test split
+    cache_path = os.path.join('data/processed', 'train_test_cache.pkl')
+    if os.path.exists(cache_path):
+        logger.info("Loading cached train/test split (for consistent model comparison)...")
+        cache_data = joblib.load(cache_path)
+        X_train, X_test, y_train, y_test = cache_data['X_train'], cache_data['X_test'], cache_data['y_train'], cache_data['y_test']
+        logger.info(f"Loaded cached split: {len(X_train)} train, {len(X_test)} test")
+    else:
+        # Train-test split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=trainer.test_size, random_state=trainer.random_state
+        )
+        # Cache the split for consistent comparisons
+        cache_data = {
+            'X_train': X_train,
+            'X_test': X_test,
+            'y_train': y_train,
+            'y_test': y_test
+        }
+        joblib.dump(cache_data, cache_path)
+        logger.info(f"Created new train/test split and cached to {cache_path}")
 
     logger.info(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
     logger.info(f"Feature dimensions: {X_train.shape[1]} features")

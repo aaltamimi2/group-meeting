@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import joblib
+import os
 from typing import List, Tuple
 from src.utils import (
     setup_logging, load_config, ensure_directory,
@@ -127,6 +129,11 @@ def main():
     ensure_directory('data/processed')
     processed_df.to_csv(output_path, index=False)
     logger.info(f"Saved processed data to {output_path}")
+
+    # Also save as pkl for fast loading during training
+    pkl_path = output_path.replace('.csv', '.pkl')
+    joblib.dump(processed_df, pkl_path)
+    logger.info(f"Saved processed data (pkl) to {pkl_path}")
 
     return processed_df
 
