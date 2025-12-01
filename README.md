@@ -93,11 +93,17 @@ Trains two models:
 - Ridge regression (linear model)
 - Random Forest (nonlinear ensemble model)
 
+Also creates comprehensive dataset visualizations before training.
+
 **Outputs**:
-- `models/ridge_model.pkl`
-- `models/random_forest_model.pkl`
-- `reports/feature_importance.png`
-- `reports/training_metrics.csv`
+- `models/ridge_model.pkl` - Trained Ridge model
+- `models/random_forest_model.pkl` - Trained Random Forest model
+- `reports/training_metrics.csv` - Model performance metrics
+- `reports/feature_importance.png` - Top 20 important features
+- `reports/dataset_property_distributions.png` - Molecular property histograms
+- `reports/dataset_correlation_heatmap.png` - Descriptor correlation matrix
+- `reports/dataset_target_distribution.png` - Target variable distribution
+- `reports/dataset_property_relationships.png` - Property vs target scatter plots
 
 ### 4. Evaluate Models
 
