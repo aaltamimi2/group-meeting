@@ -137,7 +137,17 @@ class ModelEvaluator:
                 if isinstance(rf_pred, float):
                     rf_pred = f"{rf_pred:.4f}"
 
-                f.write(f"| {row['name']} | {row['cid']} | {row['molecular_weight']:.2f} | {ridge_pred} | {rf_pred} |\n")
+                # Handle molecular_weight which might be string or float
+                mw = row['molecular_weight']
+                if pd.notna(mw):
+                    try:
+                        mw_str = f"{float(mw):.2f}"
+                    except (ValueError, TypeError):
+                        mw_str = str(mw)
+                else:
+                    mw_str = "N/A"
+
+                f.write(f"| {row['name']} | {row['cid']} | {mw_str} | {ridge_pred} | {rf_pred} |\n")
 
             f.write("\n## Visualization\n\n")
             f.write("![Prediction Plot](evaluation_predictions.png)\n")
